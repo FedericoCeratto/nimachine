@@ -1,0 +1,20 @@
+=== nimachine
+
+A simple 2D racing game inspired by MicroMachines
+
+image:https://raw.githubusercontent.com/FedericoCeratto/nimachine/master/screenshots/sshot1.png[Screenshot]
+
+How to build:
+
+[source,bash]
+----
+nimble install sdl2
+nimble release
+./nimachine
+----
+
+==== Copyrights and acknowledgements
+
+Thanks to def- for the link:https://hookrace.net/blog/writing-a-2d-platform-game-in-nim-with-sdl2/[Tutorial]
+
+The map tiles are from link:https://www.teeworlds.com/[Teeworlds]
