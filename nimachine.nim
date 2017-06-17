@@ -29,7 +29,9 @@ const
   maze_size = 64
   music_fn = "data/music/random-race.mp3"
   sound_squeal_fn = "data/sfx/tires_squeal.wav"
-
+  sound_engine_fn = "data/sfx/engine-loop-1.wav"
+  sound_thud_fn = "data/sfx/thud.wav"
+  sound_checkpoint_fn = "data/sfx/goal.wav"
 
 type
   SDLException = object of Exception
@@ -114,6 +116,10 @@ type
     checkpoints: tuple[locations: seq[IntPoint], next: int]
     sound_squeal: ptr Chunk
     squeal_fading_out: bool
+    sound_engine: ptr Chunk
+    engine_fading_out: bool
+    sound_thud: ptr Chunk
+    sound_checkpoint: ptr Chunk
 
 
 proc toIntPoint(p: Point2d): IntPoint =
@@ -863,26 +869,6 @@ proc stretch(game: Game, maze: MazeQ): MazeS =
     result[maze_size-1][y] = grass
 
 
-#system.quit()
-#
-#let mz2  = new MazeQ
-#let start = IntPoint(x:2, y:6)
-#var prev = start
-#for next in @[IntPoint(x:7, y:2), IntPoint(x:10, y:7), IntPoint(x:3, y:7), start]:
-#  echo "HEADING from ", prev, "to ", next
-#  discard step_var(mz2, prev, next)
-#  mz2.print(prev, next)
-#  prev = next
-#
-#
-##for w in win:
-##  echo w.x, ",", w.y
-#
-#mz2.print()
-#echo "done"
-#system.quit()
-
-
 proc step(path: MazePath, goal:IntPoint): MazePath =
 
   let old = path[path.high]
@@ -1350,7 +1336,41 @@ proc autopilot(player:Player, game:Game): AutoPilotControls =
   return (steering, gas, min(braking, 1.0))
 
 
-proc play_squeal(game: Game, squeal: bool)
+proc play_squeal(game: Game, squeal: bool) =
+  const chan = 1.cint
+  if chan.playing() == 0.cint:
+    if squeal:
+      # start squealing
+      discard fadeInChannel(chan, game.sound_squeal, -1, 350)
+      game.squeal_fading_out = false
+
+  elif not squeal and not game.squeal_fading_out:
+    # start fadeout
+    discard fadeOutChannel(chan, 350)
+    game.squeal_fading_out = true
+
+proc play_engine(game: Game, gas: bool) =
+  const chan = 2.cint
+  if chan.playing() == 0.cint:
+    if gas:
+      discard volume(chan, 30)
+      discard fadeInChannel(chan, game.sound_engine, 999999999, 350)
+      game.engine_fading_out = false
+
+  elif not gas and not game.engine_fading_out:
+    # start fadeout
+    discard fadeOutChannel(chan, 350)
+    game.engine_fading_out = true
+
+proc play_thud(game: Game) =
+  const chan = 3.cint
+  if chan.playing() == 0.cint:
+    discard fadeInChannel(chan, game.sound_thud, 0, 0)
+
+proc play_checkpoint(game: Game) =
+  const chan = 4.cint
+  #discard volume(chan, 40)
+  discard fadeInChannel(chan, game.sound_checkpoint, 0, 0)
 
 proc physics(game: Game, tick: int) =
   let ground = true #game.map.onGround(game.player.pos, playerSize)
@@ -1479,6 +1499,8 @@ proc physics(game: Game, tick: int) =
     if p.oil_on_wheels <= 0:
       p.oil_on_wheels = 0
 
+  game.play_engine(game.inputs[Input.run])
+
   case game.map.getTile(p.pos)
   of oil:
     p.oil_on_wheels = 1.5
@@ -1506,14 +1528,17 @@ iterator triangolar_product(s: seq[Player]): (Player, Player) =
 
 proc collisions(game: Game, tick: int) =
   ## Collisions
-  for a in game.player & game.opponents:
-    for b in game.player & game.opponents:
-      if a == b:
-        continue
+  let cars = game.player & game.opponents
+  for i, a in cars:
+    for b in cars[(i+1)..cars.high]:
       let dist = a.pos - b.pos
       if dist.len > 23:
         continue
       a.vel += (b.vel.norm * dist.norm) * b.vel * 0.5
+      b.vel -= (a.vel.norm * dist.norm) * a.vel * 0.5
+      if i == 0:
+        game.play_thud()
+
 
 
 proc moveCamera(game: Game) =
@@ -1614,6 +1639,7 @@ proc logic(game: Game, tick: int) =
   for p in game.player & game.opponents:
     if game.map.getTile(p.pos) == checkpoint_red:
       # reached designated checkpoint!
+      game.play_checkpoint()
       p.score.inc
       #game.checkpoints.next.inc
       #game.checkpoints.next = game.checkpoints.next mod game.checkpoints.locations.len
@@ -1750,6 +1776,10 @@ proc route_a_star(map: Map, start, goal: IntPoint): Route =
       fScore[neighbor] = gScore[neighbor] + heuristic_cost_estimate(neighbor, goal)
       frontier[neighbor] = fScore[neighbor]
 
+proc load_sound(fn: string): ptr Chunk =
+  result = mixer.loadWAV(fn)
+  doAssert result != nil, "Unable to load $#" % fn
+
 proc init_audio(game: Game) =
   ## Init audio mixer and load sounds
   var channel: cint
@@ -1760,26 +1790,15 @@ proc init_audio(game: Game) =
   doAssert mixer.openAudio(audio_rate, audio_format, audio_channels, audio_buffers) == 0
   discard mixer.allocateChannels(20)
 
-  game.sound_squeal = mixer.loadWAV(sound_squeal_fn)
-  doAssert game.sound_squeal != nil, "Unable to load $#" % sound_squeal_fn
+  game.sound_squeal = load_sound(sound_squeal_fn)
+  game.sound_engine = load_sound(sound_engine_fn)
+  game.sound_thud = load_sound(sound_thud_fn)
+  game.sound_checkpoint = load_sound(sound_checkpoint_fn)
 
 proc start_music(game: Game) =
   let music = mixer.loadMUS(music_fn)
   doAssert music != nil
   discard mixer.playMusic(music, 9999)
-
-proc play_squeal(game: Game, squeal: bool) =
-  const chan = 1.cint
-  if chan.playing() == 0.cint:
-    if squeal:
-      # start squealing
-      discard fadeInChannel(chan, game.sound_squeal, 0, 350)
-      game.squeal_fading_out = false
-
-  elif not squeal and not game.squeal_fading_out:
-    # start fadeout
-    discard fadeOutChannel(chan, 350)
-    game.squeal_fading_out = true
 
 
 proc main =
