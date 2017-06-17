@@ -9,6 +9,7 @@ import basic2d,
   random,
   sdl2,
   sdl2.image,
+  sdl2.mixer,
   sdl2.ttf,
   sequtils,
   sets,
@@ -24,7 +25,11 @@ import maze
 when defined(gyro):
   from gyro import newGyro, readVector
 
-const maze_size = 64
+const
+  maze_size = 64
+  music_fn = "data/music/random-race.mp3"
+  sound_squeal_fn = "data/sfx/tires_squeal.wav"
+
 
 type
   SDLException = object of Exception
@@ -107,6 +112,8 @@ type
     camera_on_player_num: int
     items: seq[Item]
     checkpoints: tuple[locations: seq[IntPoint], next: int]
+    sound_squeal: ptr Chunk
+    squeal_fading_out: bool
 
 
 proc toIntPoint(p: Point2d): IntPoint =
@@ -1343,6 +1350,7 @@ proc autopilot(player:Player, game:Game): AutoPilotControls =
   return (steering, gas, min(braking, 1.0))
 
 
+proc play_squeal(game: Game, squeal: bool)
 
 proc physics(game: Game, tick: int) =
   let ground = true #game.map.onGround(game.player.pos, playerSize)
@@ -1400,6 +1408,7 @@ proc physics(game: Game, tick: int) =
 
 
   let p = game.player
+  var squealing = false
   if p.pos_z == 0 and p.oil_on_wheels == 0:
     # on ground and without oil on the wheels
     let vel = game.player.vel
@@ -1410,6 +1419,7 @@ proc physics(game: Game, tick: int) =
       game.player.vel.rotate(vel.turnAngle(game.player.direction) / p.drift_rate_run)
       if game.player.vel.len < 3:
         game.add_skid(game.player, tick)
+        squealing = true
 
     else:
       game.player.vel.rotate(vel.turnAngle(game.player.direction) / p.drift_rate)
@@ -1426,6 +1436,7 @@ proc physics(game: Game, tick: int) =
       game.player.vel.len = (vel.len / p.brake_rate)
       if game.player.vel.len > 3:
         game.add_skid(game.player, tick)
+        squealing = true
       game.player.brakes_on.inc 10
 
 
@@ -1433,6 +1444,11 @@ proc physics(game: Game, tick: int) =
     if game.player.vel.len > 1 and
         game.player.vel.angleTo(game.player.direction) > 0.3:
       game.add_skid(game.player, tick, ItemKind.drifting)
+      squealing = true
+
+    if game.player.brakes_on > 1 and game.player.vel.len > 1:
+      squealing = true
+    game.play_squeal(squealing)
 
     if vel.len > 0:
       let
@@ -1734,10 +1750,40 @@ proc route_a_star(map: Map, start, goal: IntPoint): Route =
       fScore[neighbor] = gScore[neighbor] + heuristic_cost_estimate(neighbor, goal)
       frontier[neighbor] = fScore[neighbor]
 
+proc init_audio(game: Game) =
+  ## Init audio mixer and load sounds
+  var channel: cint
+  var audio_rate: cint = 44100
+  var audio_format: uint16
+  var audio_buffers: cint = 4096
+  var audio_channels: cint = 2
+  doAssert mixer.openAudio(audio_rate, audio_format, audio_channels, audio_buffers) == 0
+  discard mixer.allocateChannels(20)
+
+  game.sound_squeal = mixer.loadWAV(sound_squeal_fn)
+  doAssert game.sound_squeal != nil, "Unable to load $#" % sound_squeal_fn
+
+proc start_music(game: Game) =
+  let music = mixer.loadMUS(music_fn)
+  doAssert music != nil
+  discard mixer.playMusic(music, 9999)
+
+proc play_squeal(game: Game, squeal: bool) =
+  const chan = 1.cint
+  if chan.playing() == 0.cint:
+    if squeal:
+      # start squealing
+      discard fadeInChannel(chan, game.sound_squeal, 0, 350)
+      game.squeal_fading_out = false
+
+  elif not squeal and not game.squeal_fading_out:
+    # start fadeout
+    discard fadeOutChannel(chan, 350)
+    game.squeal_fading_out = true
 
 
 proc main =
-  sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS)):
+  sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS or INIT_AUDIO)):
     "SDL2 initialization failed"
 
   # defer blocks get called at the end of the procedure, even if an
@@ -1773,6 +1819,9 @@ proc main =
     game = newGame(renderer)
     startTime = epochTime()
     lastTick = 0
+
+  game.init_audio()
+  game.start_music()
 
   game.set_checkpoint_colors()
   # Game loop, draws each frame
