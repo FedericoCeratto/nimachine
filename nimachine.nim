@@ -504,6 +504,18 @@ proc new_player(game:Game, texture: TexturePtr, name="player", skin_x=0, skin_y=
 
 type MazeS* = array[0..maze_size, array[0..maze_size, int]]
 
+proc is_checkpoint_suitable(x, y: int, game: Game, maze: MazeS): bool =
+  ## Check if a new checkpoint is too close to others or not on track
+  for existing in game.checkpoints.locations:
+    if ((existing.x - x) ^ 2 + (existing.y - y) ^ 2) < 100:
+      return false  # too close to another checkpoint
+  for dx in -1..1:
+    for dy in -1..1:
+      if maze[x + dx][y + dy] != track:
+        # not on track
+        return false
+  return true
+
 proc stretch_maze(game: Game): MazeS =
   for y in countup(0, result.len-1):
     for x in countup(0, result.len-1):
@@ -522,13 +534,10 @@ proc stretch_maze(game: Game): MazeS =
         result[x][y] =
           if maze[mx][my] == 0: 1 else: grass
 
-  var checkpoint_cnt = 0
-  while checkpoint_cnt < 6:
-    let
-      x = random(1..maze_size)
-      y = random(1..maze_size)
-    if @[result[x][y], result[x-1][y], result[x+1][y], result[x][y+1], result[x][y-1]] == @[1, 1, 1, 1, 1]:
-      checkpoint_cnt.inc
+  while game.checkpoints.locations.len < 6:
+    let x = random(1..maze_size)
+    let y = random(1..maze_size)
+    if is_checkpoint_suitable(x, y, game, result):
       game.checkpoints.locations.add IntPoint(x:x, y:y)
 
   # borders
@@ -873,13 +882,11 @@ proc stretch(game: Game, maze: MazeQ): MazeS =
         result[x][y] =
           if maze[mx][my]: track else: grass
 
-  var checkpoint_cnt = 0
-  while checkpoint_cnt < 6:
-    let
-      x = random(1..maze_size)
-      y = random(1..maze_size)
-    if @[result[x][y], result[x-1][y], result[x+1][y], result[x][y+1], result[x][y-1]] == @[1, 1, 1, 1, 1]:
-      checkpoint_cnt.inc
+  # generate checkpoints
+  while game.checkpoints.locations.len < 6:
+    let x = random(1..maze_size)
+    let y = random(1..maze_size)
+    if is_checkpoint_suitable(x, y, game, result):
       game.checkpoints.locations.add IntPoint(x:x, y:y)
 
   # borders
