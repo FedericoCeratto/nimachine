@@ -1283,7 +1283,6 @@ proc autopilot(player:Player, game:Game): AutoPilotControls =
 
     else:
       if epochTime() - player.router_start_time > 5:
-        echo player.name, " timed out - RESET"
         player.restart_player()
         game.spawn_router(player)
 
@@ -1665,11 +1664,9 @@ proc logic(game: Game, tick: int) =
   template time: expr = game.player.time
   for p in game.player & game.opponents:
     if game.map.getTile(p.pos) == checkpoint_red:
-      # reached designated checkpoint!
+      # player 'p' reached designated checkpoint!
       game.play_checkpoint()
       p.score.inc
-      #game.checkpoints.next.inc
-      #game.checkpoints.next = game.checkpoints.next mod game.checkpoints.locations.len
       var new_cp = random(0..game.checkpoints.locations.len)
       while new_cp == game.checkpoints.next:
         new_cp = random(0..game.checkpoints.locations.len)
@@ -1677,9 +1674,10 @@ proc logic(game: Game, tick: int) =
 
       game.set_checkpoint_colors()
 
-      # simply flush the route, the autopilot will take care of starting a
-      # new routing thread if needed
-      p.route = initTable[IntPoint, IntPoint]()
+      # simply flush the route, the autopilot will take care of
+      # starting a new routing thread if needed
+      for o in game.opponents:
+        o.route = initTable[IntPoint, IntPoint]()
 
       if time.begin == -1:
         time.begin = tick
