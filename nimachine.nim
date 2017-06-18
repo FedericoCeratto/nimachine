@@ -1223,12 +1223,6 @@ proc getTile(map: Map, pos: Point2d): int =
 proc setTile(map: Map, p: IntPoint , v: uint8) =
   map.tiles[p.x][p.y] = v.int
 
-proc isSolid(map: Map, x, y: int): bool =
-  map.getTile(x, y) notin {air}
-
-proc isSolid(map: Map, point: Point2d): bool =
-  map.isSolid(point.x.round.int, point.y.round.int)
-
 proc is_on_ground(map: Map, p: Point2d): bool =
   map.getTile(p.x.round.int, p.y.round.int) notin {air}
 
@@ -1238,13 +1232,8 @@ proc is_on_air(map: Map, p: Point2d): bool =
 proc is_on_grass(map: Map, p: Point2d): bool =
   map.getTile(p.x.round.int, p.y.round.int) in {grass}
 
-proc onGround(map: Map, pos: Point2d, size: Vector2d): bool =
-  let size = size * 0.5
-  result =
-    map.isSolid(point2d(pos.x - size.x, pos.y + size.y + 1)) or
-    map.isSolid(point2d(pos.x + size.x, pos.y + size.y + 1))
 
-proc move_box(map: Map, p:Player,
+proc move_car(map: Map, p:Player,
              size: Vector2d): set[Collision] {.discardable.} =
   let distance = p.vel.len
   let maximum = distance.int
@@ -1257,7 +1246,7 @@ proc move_box(map: Map, p:Player,
   for i in 0 .. maximum:
     var newPos = p.pos + p.vel * fraction
     if map.is_on_air(newPos):
-      p.vel.len = p.vel.len * 0.2
+      p.vel.len = p.vel.len * p.slowdown_on_grass
     elif p.pos_z > 0:
       # player is mid-air
       discard
@@ -1404,7 +1393,7 @@ proc play_checkpoint(game: Game) =
   discard fadeInChannel(chan, game.sound_checkpoint, 0, 0)
 
 proc physics(game: Game, tick: int) =
-  let ground = true #game.map.onGround(game.player.pos, playerSize)
+  let ground = true
 
   when defined(gyro):
     let gyro_vector = input_gyro.readVector()
@@ -1455,7 +1444,7 @@ proc physics(game: Game, tick: int) =
     op.old_pos = op.pos
     op.old_direction = op.direction
 
-    game.map.moveBox(op, playerSize)
+    game.map.move_car(op, playerSize)
 
 
   let p = game.player
@@ -1549,7 +1538,7 @@ proc physics(game: Game, tick: int) =
   else:
     discard
 
-  game.map.moveBox(game.player, playerSize)
+  game.map.move_car(game.player, playerSize)
 
 iterator triangolar_product(s: seq[Player]): (Player, Player) =
   for a_cnt, a in s:
