@@ -120,7 +120,7 @@ type
     items: seq[Item]
     checkpoints: tuple[locations: seq[IntPoint], next: int]
     sound_squeal: ptr Chunk
-    squeal_fading_out: bool
+    squeal_fade_out_time: float
     sound_engine: ptr Chunk
     engine_fading_out: bool
     sound_thud: ptr Chunk
@@ -1361,16 +1361,24 @@ proc autopilot(player:Player, game:Game): AutoPilotControls =
 
 proc play_squeal(game: Game, squeal: bool) =
   const chan = 1.cint
-  if chan.playing() == 0.cint:
+  const fade_time_ms = 350
+  if chan.playing() == 0.cint:  # is silent
+    game.squeal_fade_out_time = 0.0
     if squeal:
       # start squealing
-      discard fadeInChannel(chan, game.sound_squeal, -1, 350)
-      game.squeal_fading_out = false
+      discard fadeInChannel(chan, game.sound_squeal, -1, fade_time_ms)
 
-  elif not squeal and not game.squeal_fading_out:
-    # start fadeout
-    discard fadeOutChannel(chan, 350)
-    game.squeal_fading_out = true
+  elif not squeal:
+    if game.squeal_fade_out_time == 0.0:
+      # start fadeout
+      discard fadeOutChannel(chan, fade_time_ms)
+      game.squeal_fade_out_time = epochTime() + fade_time_ms.float / 1000.0
+
+    elif game.squeal_fade_out_time + 0.1 < epochTime():
+      # sometimes the fade out does not stop the sound. Stop it now
+      # as a workaround.
+      discard fadeOutChannel(chan, 0)
+
 
 proc play_engine(game: Game, gas: bool) =
   const chan = 2.cint
