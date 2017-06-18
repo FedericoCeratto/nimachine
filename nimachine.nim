@@ -6,6 +6,7 @@ import basic2d,
   hashes,
   math,
   os,
+  parseopt,
   random,
   sdl2,
   sdl2.image,
@@ -66,6 +67,10 @@ type
   Route = Table[IntPoint, IntPoint]
 
   RouterParams = tuple[map: Map, start, goal: IntPoint, chan: ptr Channel[Route]]
+
+  Args = object
+    music_vol: int
+    maze: bool
 
 type
   Player = ref object
@@ -200,6 +205,26 @@ template sdlFailIf(cond: typed, reason: string) =
   if cond: raise SDLException.newException(
     reason & ", SDL error: " & $getError())
 
+proc print_help() =
+  echo """Usage: ./nimachine
+  -h        help
+  -m        use random maze as track
+"""
+  system.quit()
+
+proc parse_args(): Args =
+  result = Args(music_vol: 128, maze: false)
+  for kind, key, val in getopt():
+    case kind
+    of cmdArgument:
+      discard
+    of cmdLongOption, cmdShortOption:
+      case key
+      of "help", "h":
+        print_help()
+      of "m": result.maze = true
+    of cmdEnd:
+      assert(false)
 
 proc hash(p: IntPoint): Hash
 
@@ -737,7 +762,6 @@ proc step_var2(maze: ref MazeQ, old, goal:IntPoint): IntPoint =
     let new_p = step_var2(maze, p, goal)
     if new_p == p: # failed
       maze[p.x][p.y] = false
-      #maze.print()
       continue
 
     return new_p # success
@@ -812,7 +836,6 @@ proc step_var(maze: ref MazeQ, old, goal:IntPoint, old_angle=0): IntPoint =
 
   # all options failed
   #echo "giving up at ", old
-  #maze.print()
   return old
 
 
@@ -832,8 +855,6 @@ proc generate_circuit(): MazeQ =
       y = r * sin(a) + 7
     result[x.int][y.int] = true
     angle += 0.1
-
-  #result.print()
 
 proc stretch(game: Game, maze: MazeQ): MazeS =
   for y in countup(0, result.len-1):
@@ -903,10 +924,13 @@ proc step(path: MazePath, goal:IntPoint): MazePath =
 
 
 
-proc new_random_map(game:Game): Map =
+proc new_random_map(game:Game, use_maze: bool): Map =
   new result
-  #let maze = game.stretch_maze()
-  let maze = game.stretch(generate_circuit())
+  let maze =
+    if use_maze:
+      game.stretch_maze()
+    else:
+      game.stretch(generate_circuit())
 
   for x in countup(0, maze_size - 1):
     for y in countup(0, maze_size - 1):
@@ -992,7 +1016,6 @@ proc new_random_map(game:Game): Map =
           result.tiles[x][y] = r
   result.width = maze_size
   result.height = maze_size
-  #result.print_maze
 
 proc cost_between(tiles: MapTiles, start, goal: IntPoint): int =
   let t = tiles[goal.x][goal.y]
@@ -1043,7 +1066,7 @@ else:
 
 proc generate_routes(game: Game, now=false)
 
-proc newGame(renderer: RendererPtr): Game =
+proc new_game(renderer: RendererPtr, args: Args): Game =
   new result
   result.renderer = renderer
   result.checkpoints = (@[], 0)
@@ -1054,7 +1077,7 @@ proc newGame(renderer: RendererPtr): Game =
     readRW("DejaVuSans.ttf"), freesrc = 1, 28)
   sdlFailIf result.font.isNil: "Failed to load font"
 
-  result.map = result.newRandomMap()
+  result.map = result.new_random_map(args.maze)
 
   result.player = new_player(result, renderer.loadTexture_RW(
     readRW("cars.png"), freesrc = 1))
@@ -1802,6 +1825,8 @@ proc start_music(game: Game) =
 
 
 proc main =
+  let args = parse_args()
+
   sdlFailIf(not sdl2.init(INIT_VIDEO or INIT_TIMER or INIT_EVENTS or INIT_AUDIO)):
     "SDL2 initialization failed"
 
@@ -1835,7 +1860,7 @@ proc main =
   showCursor(false)
 
   var
-    game = newGame(renderer)
+    game = new_game(renderer, args)
     startTime = epochTime()
     lastTick = 0
 

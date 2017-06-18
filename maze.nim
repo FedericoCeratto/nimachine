@@ -53,42 +53,11 @@ proc carveMaze(maze: ref MazeT, x, y: int) =
          carveMaze(maze, nx2, ny2)
 
 
-proc generateMaze*(): MazeT =
+proc generate_maze*(): MazeT =
   var Presult: ref MazeT
   new(Presult)
   initMaze(Presult)
   carveMaze(Presult, 2, 2)
   Presult[1][2] = 0
   Presult[height - 2][width - 3] = 0
-  for x in 0..width:
-    for y in 0..height:
-      stdout.write if Presult[y][x] == 1: "▉" else: " "
-    echo " "
-
   return Presult[]
-
-
-import basic2d,
-  random
-from math import Pi
-
-type Path = seq[Vector2d]
-
-proc shuffle[T](x: var seq[T]) =
-  for i in countdown(x.high, 0):
-    let j = random(i + 1)
-    swap(x[i], x[j])
-
-
-#const angles = @[-Pi/2, Pi/2, 0, Pi]
-#
-#proc step(goal: Vector2d, path: Path): bool  =
-#  ## Try to reach the goal
-#  var rand_angles = angles
-#  rand_angles.shuffle()
-#  for angle in rand_angles:
-#    let p2 = path[path.high-1]
-#    let p = path[path.high]
-#    let c = p + 
-#    echo angle
-
